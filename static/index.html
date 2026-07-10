@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>RegLog CSV — Convertitore di file di registro in CSV con parsing server-side</title>
+  <meta name="description" content="Converti file di log Apache, Nginx e syslog in CSV strutturato. Carica il file, seleziona il formato e scarica subito il CSV con campi estratti: IP, timestamp, metodo, percorso, stato e molto altro.">
+
+  <link rel="canonical" href="https://cristianporco.it/app/reglogcsv/">
+
+  <!-- Open Graph -->
+  <meta property="og:title" content="RegLog CSV — Convertitore di log in CSV">
+  <meta property="og:description" content="Converti log Apache, Nginx e syslog in CSV strutturato. Carica, seleziona il formato, scarica.">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://cristianporco.it/app/reglogcsv/">
+
+  <!-- Fonts: Orbitron (display) + Atkinson Hyperlegible (body) + JetBrains Mono (code) -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;600;700;800;900&family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400;1,700&family=JetBrains+Mono:wght@400;500&display=swap">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;600;700;800;900&family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400;1,700&family=JetBrains+Mono:wght@400;500&display=swap">
+
+  <link rel="stylesheet" href="style.css">
+
+  <!-- JSON-LD -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "WebApplication",
+    "name": "RegLog CSV",
+    "url": "https://cristianporco.it/app/reglogcsv/",
+    "description": "Convertitore server-side di file di registro (Apache, Nginx, syslog) in CSV strutturato.",
+    "applicationCategory": "DeveloperApplication",
+    "operatingSystem": "All",
+    "browserRequirements": "Richiede un browser moderno con supporto JavaScript e Fetch API"
+  }
+  </script>
+</head>
+<body>
+
+<header class="site-header" role="banner">
+  <div class="header-inner">
+    <a href="./" class="logo" aria-label="RegLog CSV — Home">
+      <span class="logo-icon" aria-hidden="true">
+        <svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <rect x="2" y="6" width="28" height="20" rx="2" stroke="currentColor" stroke-width="2"/>
+          <line x1="6" y1="12" x2="26" y2="12" stroke="currentColor" stroke-width="1.5" stroke-dasharray="2 3"/>
+          <line x1="6" y1="16" x2="22" y2="16" stroke="currentColor" stroke-width="1.5" stroke-dasharray="3 2"/>
+          <line x1="6" y1="20" x2="18" y2="20" stroke="currentColor" stroke-width="1.5" stroke-dasharray="1 4"/>
+          <circle cx="27" cy="24" r="2.5" fill="currentColor"/>
+        </svg>
+      </span>
+      <span class="logo-text">RegLog <span class="logo-accent">CSV</span></span>
+    </a>
+    <p class="header-tagline">Analizza i tuoi log. Scarica CSV strutturato. Niente API esterne — tutto qui.</p>
+  </div>
+</header>
+
+<main id="app" role="main" aria-label="Convertitore log in CSV">
+
+  <!-- Waveform visualizer (signature element) -->
+  <div class="waveform" id="waveform" aria-hidden="true">
+    <canvas id="waveform-canvas" width="600" height="80" aria-hidden="true"></canvas>
+  </div>
+
+  <!-- Step 1: Upload & Format -->
+  <section class="card" aria-labelledby="step1-heading">
+    <h2 id="step1-heading" class="card-title">
+      <span class="step-badge" aria-hidden="true">1</span>
+      Carica il file di log
+    </h2>
+
+    <div class="dropzone" id="dropzone" role="button" tabindex="0" aria-label="Zona di caricamento file — clicca o trascina qui il file di log">
+      <div class="dropzone-icon" aria-hidden="true">
+        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+          <polyline points="17 8 12 3 7 8"/>
+          <line x1="12" y1="3" x2="12" y2="15"/>
+        </svg>
+      </div>
+      <p class="dropzone-text">Trascina qui il file di log <span class="text-muted">oppure clicca per sceglierlo</span></p>
+      <p class="dropzone-hint">Formati supportati: Apache, Nginx, syslog. Dimensione massima: 50&nbsp;MB.</p>
+      <input type="file" id="file-input" class="sr-only" accept=".log,.txt,.csv,text/plain,application/octet-stream" aria-label="Seleziona file di log">
+      <div class="file-info" id="file-info" hidden>
+        <span class="file-name" id="file-name"></span>
+        <span class="file-size" id="file-size"></span>
+        <button type="button" class="btn-remove" id="btn-remove-file" aria-label="Rimuovi file">✕</button>
+      </div>
+    </div>
+
+    <div class="format-selector" id="format-selector">
+      <label for="format" class="field-label">Formato del log</label>
+      <select id="format" class="select-field" required aria-required="true">
+        <option value="">— Seleziona il formato —</option>
+        <optgroup label="Apache">
+          <option value="apache_combined">Apache Combined (access log standard con Referer e User-Agent)</option>
+          <option value="apache_clf">Apache CLF / Common Log Format (solo IP, data, richiesta, stato, dimensione)</option>
+        </optgroup>
+        <optgroup label="Nginx">
+          <option value="nginx">Nginx Access Log (formato combined predefinito)</option>
+        </optgroup>
+        <optgroup label="Syslog">
+          <option value="syslog_3164">Syslog RFC 3164 (BSD syslog tradizionale)</option>
+          <option value="syslog_5424">Syslog RFC 5424 (IETF syslog moderno)</option>
+        </optgroup>
+      </select>
+    </div>
+
+    <button type="button" class="btn-primary" id="btn-convert" disabled aria-disabled="true">
+      <span class="btn-label">Converti in CSV</span>
+      <span class="btn-arrow" aria-hidden="true">→</span>
+    </button>
+  </section>
+
+  <!-- Step 2: Processing & Result -->
+  <section class="card" id="result-card" hidden aria-live="polite" aria-labelledby="result-heading">
+    <h2 id="result-heading" class="card-title">
+      <span class="step-badge" aria-hidden="true">2</span>
+      <span id="result-title-text">Risultato</span>
+    </h2>
+
+    <!-- Processing state -->
+    <div class="processing" id="processing" hidden>
+      <div class="processing-bar" id="processing-bar" role="progressbar" aria-label="Conversione in corso" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"></div>
+      <p class="processing-text" id="processing-text">Analisi del file in corso…</p>
+    </div>
+
+    <!-- Error state -->
+    <div class="error-box" id="error-box" hidden role="alert">
+      <div class="error-icon" aria-hidden="true">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="10"/>
+          <line x1="15" y1="9" x2="9" y2="15"/>
+          <line x1="9" y1="9" x2="15" y2="15"/>
+        </svg>
+      </div>
+      <div class="error-content">
+        <p class="error-message" id="error-message"></p>
+        <button type="button" class="btn-text" id="btn-retry">Riprova</button>
+      </div>
+    </div>
+
+    <!-- Success state -->
+    <div class="success-box" id="success-box" hidden>
+      <div class="success-icon" aria-hidden="true">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
+          <polyline points="22 4 12 14.01 9 11.01"/>
+        </svg>
+      </div>
+      <div class="success-content">
+        <p class="success-message" id="success-message"></p>
+        <p class="success-detail" id="success-detail"></p>
+        <button type="button" class="btn-primary" id="btn-download">
+          <span class="btn-label">Scarica CSV</span>
+          <span class="btn-icon" aria-hidden="true">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+              <polyline points="7 10 12 15 17 10"/>
+              <line x1="12" y1="15" x2="12" y2="3"/>
+            </svg>
+          </span>
+        </button>
+      </div>
+    </div>
+  </section>
+
+  <!-- Format reference -->
+  <details class="card reference-card">
+    <summary class="reference-summary" role="button" aria-expanded="false">
+      <span class="step-badge" aria-hidden="true">?</span>
+      Formati riconosciuti e colonne estratte
+    </summary>
+    <div class="reference-content">
+      <div class="ref-grid">
+        <div class="ref-item">
+          <h3 class="ref-format">Apache Combined / Nginx</h3>
+          <code class="ref-columns">IP, Ident, User, Timestamp, Method, Path, Protocol, Status, Size, Referer, UserAgent</code>
+          <p class="ref-sample">Esempio: <span class="mono">192.168.1.1 - - [10/Oct/2023:13:55:36 +0000] "GET /api/status HTTP/1.1" 200 1234 "https://example.com" "curl/7.79"</span></p>
+        </div>
+        <div class="ref-item">
+          <h3 class="ref-format">Apache CLF (Common)</h3>
+          <code class="ref-columns">IP, Ident, User, Timestamp, Method, Path, Protocol, Status, Size</code>
+          <p class="ref-sample">Esempio: <span class="mono">10.0.0.5 - alice [10/Oct/2023:14:01:00 +0000] "POST /login HTTP/1.1" 302 0</span></p>
+        </div>
+        <div class="ref-item">
+          <h3 class="ref-format">Syslog RFC 3164</h3>
+          <code class="ref-columns">Priority, Timestamp, Host, Process, PID, Message</code>
+          <p class="ref-sample">Esempio: <span class="mono">Oct 10 13:55:36 webserver sshd[12345]: Accepted publickey for alice from 192.168.1.100 port 54321</span></p>
+        </div>
+        <div class="ref-item">
+          <h3 class="ref-format">Syslog RFC 5424</h3>
+          <code class="ref-columns">Priority, Version, Timestamp, Host, AppName, ProcID, MsgID, StructuredData, Message</code>
+          <p class="ref-sample">Esempio: <span class="mono">&lt;34&gt;1 2023-10-10T13:55:36.003Z myhost app 12345 ID47 - Log message</span></p>
+        </div>
+      </div>
+    </div>
+  </details>
+
+</main>
+
+<footer class="site-footer" role="contentinfo">
+  <p>RegLog CSV — Elaborazione server-side con Python. Nessun dato inviato a terze parti. <span class="footer-url">cristianporco.it/app/reglogcsv/</span></p>
+</footer>
+
+<script src="app.js" defer></script>
+
+</body>
+</html>

@@ -1,0 +1,3 @@
+User-agent: *
+Allow: /
+Sitemap: https://cristianporco.it/app/reglogcsv/sitemap.xml
